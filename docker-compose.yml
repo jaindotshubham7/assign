@@ -1,0 +1,65 @@
+# Docker compose to build image.
+
+version: "3"
+services:
+  web:
+    container_name: fampay-application
+    ports:
+      - 8000:8000
+    links:
+      - postgres
+      - redis
+    command: bash -c "pip install -r requirements.txt && python manage.py migrate && python manage.py collectstatic --noinput && gunicorn assignment.wsgi:application -b 0.0.0.0:8000 -w 1 --log-level info --keep-alive 200"
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - static_volume:/src/staticfiles
+  postgres:
+    container_name: fampay-postgres
+    image: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=fampay
+    ports:
+      - "5432:5432"
+  redis:
+    image: redis:alpine
+    container_name: fampay-redis
+    ports:
+      - "6739:6739"
+  celery:
+    restart: always
+    container_name: fampay-celery
+    build: .
+    command: celery -A assignment worker -l info
+    volumes:
+      - .:/src
+    env_file: .env
+    depends_on:
+      - redis
+      - web
+  celery-beat:
+    restart: always
+    container_name: fampay-beat
+    build: .
+    command: celery -A assignment beat -l info
+    env_file: .env
+    volumes:
+      - .:/src
+    depends_on:
+      - redis
+      - web
+  nginx:
+    container_name: fampay-nginx
+    build: ./nginx
+    ports:
+      - 1337:80
+    depends_on:
+      - web
+volumes:
+  static_volume:
+  postgres_data:
